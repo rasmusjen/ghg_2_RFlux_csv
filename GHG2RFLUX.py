@@ -11,17 +11,20 @@ from datetime import datetime
 from pandas.tseries.offsets import DateOffset
 import zipfile
 from tqdm import tqdm
+import configparser  # Import configparser to read the INI file
 
+# Read configuration from config.ini
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+station_ID = config['settings']['station_ID']
+year = int(config['settings']['year'])
+file_ID = config['settings']['file_ID']
+hz = int(config['settings']['hz'])
 
 # Define the input and output directories
-station_ID = 'GL-ZaH'
-year = 2022
-input_directory = fr'E:\ICOS\{station_ID}\Raw\ghg\{year}'
-output_directory = fr'E:\ICOS\{station_ID}\Raw\RFlux_csv\{year}'
-
-# logger_ID = 'L01'
-file_ID = 'F10'
-hz = 10 #ACQUISITION_FREQUENCY
+input_directory = fr'D:\L0_raw\{station_ID}\{year}\ec\raw'
+output_directory = fr'D:\L0_raw\{station_ID}\{year}\ec\rflux_csv'
 
 vars_subset1 = [ 'U (m/s)', 'V (m/s)', 'W (m/s)', 'T (C)',
                'Anemometer Diagnostics','Diagnostic Value',
