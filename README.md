@@ -73,8 +73,26 @@ python GHG2RFLUX.py
 
 The script will:
 1. Read `.ghg` files from the input directory: `D:\L0_raw\{station_ID}\{year}\ec\raw`
+2. If present, read `disturbance.txt` in that same input directory and omit files whose timestamp is within any disturbance range
 2. Process and convert the data
 3. Output `.csv` files to: `D:\L0_raw\{station_ID}\{year}\ec\rflux_csv`
+
+### Optional: Disturbance File
+
+To omit disturbed periods, create a file named `disturbance.txt` in the input directory:
+
+`D:\L0_raw\{station_ID}\{year}\ec\raw\disturbance.txt`
+
+File format (comma-separated):
+
+```text
+date_start,date_end,comment
+202507150000,202507300900,exchange of SF2
+```
+
+- Datetime format is `yyyymmddhhmm`
+- You can include multiple disturbance rows
+- Files with timestamps inside any `[date_start, date_end]` interval are skipped
 
 ## Required Python Packages
 
