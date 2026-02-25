@@ -9,9 +9,11 @@ import os
 import hashlib
 import html
 import json
+import re
 import subprocess
 import platform
 import sys
+from bisect import bisect_right
 import pandas as pd
 from datetime import datetime
 from pandas.tseries.offsets import DateOffset
@@ -99,7 +101,30 @@ def load_disturbance_windows(file_path):
     return windows
 
 
-def is_in_disturbance(timestamp_str, windows):
+def build_disturbance_index(windows):
+    if not windows:
+        return [], []
+
+    sorted_windows = sorted(windows, key=lambda item: item[0])
+    merged_windows = []
+    for start_dt, end_dt in sorted_windows:
+        if not merged_windows:
+            merged_windows.append([start_dt, end_dt])
+            continue
+
+        last_start, last_end = merged_windows[-1]
+        if start_dt <= last_end:
+            if end_dt > last_end:
+                merged_windows[-1][1] = end_dt
+        else:
+            merged_windows.append([start_dt, end_dt])
+
+    merged = [(start_dt, end_dt) for start_dt, end_dt in merged_windows]
+    starts = [start_dt for start_dt, _ in merged]
+    return merged, starts
+
+
+def is_in_disturbance(timestamp_str, windows, window_starts):
     if not windows:
         return False
 
@@ -108,7 +133,30 @@ def is_in_disturbance(timestamp_str, windows):
     except Exception:
         return False
 
-    return any(start_dt <= file_dt <= end_dt for start_dt, end_dt in windows)
+    idx = bisect_right(window_starts, file_dt) - 1
+    if idx < 0:
+        return False
+
+    return file_dt <= windows[idx][1]
+
+
+def extract_timestamp_from_file_path(file_path):
+    file_name = os.path.basename(file_path)
+
+    for pattern in [r'(?<!\d)(\d{12})(?!\d)', r'(?<!\d)(\d{14})(?!\d)']:
+        candidates = re.findall(pattern, file_name)
+        if not candidates:
+            candidates = re.findall(pattern, file_path)
+
+        for candidate in candidates:
+            timestamp_text = candidate[:12]
+            try:
+                datetime.strptime(timestamp_text, '%Y%m%d%H%M')
+                return timestamp_text
+            except Exception:
+                continue
+
+    return None
 
 
 def compute_file_hash(file_path):
@@ -475,6 +523,8 @@ def write_report(report_context):
       <div class="stat"><div class="label">Discovered .ghg files</div><div class="value">{report_context['stats']['total_discovered']}</div></div>
       <div class="stat"><div class="label">Converted files</div><div class="value">{report_context['stats']['converted_total']}</div></div>
       <div class="stat"><div class="label">Disturbance excluded</div><div class="value">{report_context['stats']['excluded_disturbance']}</div></div>
+            <div class="stat"><div class="label">Excluded by prefilter</div><div class="value">{report_context['stats']['excluded_disturbance_prefilter']}</div></div>
+            <div class="stat"><div class="label">Excluded after parse</div><div class="value">{report_context['stats']['excluded_disturbance_post_parse']}</div></div>
       <div class="stat"><div class="label">Rejected (>10% missing)</div><div class="value">{report_context['stats']['rejected_missing']}</div></div>
       <div class="stat"><div class="label">Failed parse/read</div><div class="value">{report_context['stats']['failed_parse']}</div></div>
       <div class="stat"><div class="label">Expected rows per file</div><div class="value">{report_context['stats']['expected_rows_per_file']}</div></div>
@@ -561,6 +611,7 @@ for root, _, files in os.walk(input_directory):
 
 total_files = len(ghg_files)
 disturbance_windows = load_disturbance_windows(disturbance_file)
+disturbance_windows_indexed, disturbance_window_starts = build_disturbance_index(disturbance_windows)
 expected_rows = 60 * 30 * hz
 run_started = datetime.now()
 
@@ -573,13 +624,37 @@ pbar = tqdm(total=total_files)
 # Iterate through .ghg files
 for file_path in ghg_files:
     file_name = os.path.basename(file_path)
+
+    timestamp_hint = extract_timestamp_from_file_path(file_path)
+    timestamp_hint_dt = None
+    if timestamp_hint is not None:
+        try:
+            timestamp_hint_dt = datetime.strptime(timestamp_hint, '%Y%m%d%H%M')
+            seen_timestamps.append(timestamp_hint_dt)
+        except Exception:
+            timestamp_hint_dt = None
+
+    if timestamp_hint and is_in_disturbance(timestamp_hint, disturbance_windows_indexed, disturbance_window_starts):
+        print("File omitted due to disturbance window (prefilter):", file_path)
+        run_records.append({
+            'status': 'excluded_disturbance',
+            'file_name': file_name,
+            'file_path': file_path,
+            'timestamp': timestamp_hint,
+            'timestamp_dt': timestamp_hint_dt,
+            'reason': 'Timestamp within disturbance window (prefilter)'
+        })
+        pbar.update(1)
+        continue
+
     df1, timestamp, error_message = process_ghg_file(file_path)
 
     timestamp_dt = None
     if timestamp is not None:
         try:
             timestamp_dt = datetime.strptime(timestamp, '%Y%m%d%H%M')
-            seen_timestamps.append(timestamp_dt)
+            if timestamp_hint_dt is None or timestamp_dt != timestamp_hint_dt:
+                seen_timestamps.append(timestamp_dt)
         except Exception:
             timestamp_dt = None
 
@@ -596,7 +671,7 @@ for file_path in ghg_files:
         pbar.update(1)
         continue
 
-    if is_in_disturbance(timestamp, disturbance_windows):
+    if is_in_disturbance(timestamp, disturbance_windows_indexed, disturbance_window_starts):
         print("File omitted due to disturbance window:", file_path)
         run_records.append({
             'status': 'excluded_disturbance',
@@ -690,6 +765,14 @@ for ts in converted_timestamps:
 converted_full = sum(1 for r in run_records if r['status'] == 'converted_full')
 converted_padded = sum(1 for r in run_records if r['status'] == 'converted_padded')
 excluded_disturbance = [r for r in run_records if r['status'] == 'excluded_disturbance']
+excluded_disturbance_prefilter = [
+    r for r in excluded_disturbance
+    if 'prefilter' in str(r.get('reason', '')).lower()
+]
+excluded_disturbance_post_parse = [
+    r for r in excluded_disturbance
+    if 'prefilter' not in str(r.get('reason', '')).lower()
+]
 rejected_missing = [r for r in run_records if r['status'] == 'rejected_missing']
 failed_files = [r for r in run_records if r['status'] == 'failed_parse']
 
@@ -736,6 +819,8 @@ report_context = {
         'converted_full': converted_full,
         'converted_padded': converted_padded,
         'excluded_disturbance': len(excluded_disturbance),
+        'excluded_disturbance_prefilter': len(excluded_disturbance_prefilter),
+        'excluded_disturbance_post_parse': len(excluded_disturbance_post_parse),
         'rejected_missing': len(rejected_missing),
         'failed_parse': len(failed_files),
         'expected_rows_per_file': expected_rows,
