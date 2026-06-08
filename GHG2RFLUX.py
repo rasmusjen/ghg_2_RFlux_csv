@@ -15,7 +15,7 @@ import platform
 import sys
 from bisect import bisect_right
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from pandas.tseries.offsets import DateOffset
 import zipfile
 from tqdm import tqdm
@@ -31,8 +31,8 @@ file_ID = config['settings']['file_ID']
 hz = int(config['settings']['hz'])
 
 # Define the input and output directories
-input_directory = fr'D:\L0_raw\{station_ID}\{year}\ec\raw'
-output_directory = fr'D:\L0_raw\{station_ID}\{year}\ec\rflux_csv'
+input_directory = fr'E:\L0_raw\{station_ID}\{year}\ec\raw'
+output_directory = fr'E:\L0_raw\{station_ID}\{year}\ec\rflux_csv1'
 
 # Create output directory if it doesn't exist
 os.makedirs(output_directory, exist_ok=True)
@@ -157,6 +157,15 @@ def extract_timestamp_from_file_path(file_path):
                 continue
 
     return None
+
+
+def ceil_timestamp_to_half_hour(timestamp_str):
+    """Round YYYYMMDDHHMM up to the next :00 or :30 boundary."""
+    dt_value = datetime.strptime(timestamp_str, '%Y%m%d%H%M')
+    minute_mod = dt_value.minute % 30
+    if minute_mod != 0:
+        dt_value = dt_value + timedelta(minutes=(30 - minute_mod))
+    return dt_value.strftime('%Y%m%d%H%M')
 
 
 def compute_file_hash(file_path):
@@ -594,7 +603,8 @@ def process_ghg_file(file_path):
         else:
             df1 = df.loc[:, vars_subset2]
             df1 = df1.rename(columns=dict(zip(vars_subset2, vars_rename)))
-        timestamp = str(df['TIMESTAMP'].iloc[-1])[:12]
+        # Use Datetime directly to avoid float/string formatting issues from TIMESTAMP conversion.
+        timestamp = df['Datetime'].iloc[-1].strftime('%Y%m%d%H%M')
         # pdb.set_trace()
         return df1, timestamp, None
 
@@ -708,8 +718,37 @@ for file_path in ghg_files:
         df1 = pd.concat([df1, add_missing_rows], ignore_index=True)
         status = 'converted_padded'
 
-    output_file_name = f"{station_ID}_EC_{timestamp}_{file_ID}.csv"
+    try:
+        output_timestamp = ceil_timestamp_to_half_hour(timestamp)
+    except Exception:
+        print("File not written due to invalid timestamp for filename rounding:", file_path)
+        run_records.append({
+            'status': 'failed_parse',
+            'file_name': file_name,
+            'file_path': file_path,
+            'timestamp': timestamp if timestamp else 'NA',
+            'timestamp_dt': timestamp_dt,
+            'reason': f'Invalid timestamp for half-hour rounding: {timestamp}'
+        })
+        pbar.update(1)
+        continue
+
+    output_file_name = f"{station_ID}_EC_{output_timestamp}_{file_ID}.csv"
     output_file_path = os.path.join(output_directory, output_file_name)
+
+    if os.path.exists(output_file_path):
+        print("File not written due to duplicate rounded timestamp:", output_file_path)
+        run_records.append({
+            'status': 'failed_parse',
+            'file_name': file_name,
+            'file_path': file_path,
+            'timestamp': timestamp,
+            'timestamp_dt': timestamp_dt,
+            'reason': f'Duplicate output filename after half-hour rounding: {output_file_name}'
+        })
+        pbar.update(1)
+        continue
+
     df1.to_csv(output_file_path, index=False)
 
     run_records.append({
