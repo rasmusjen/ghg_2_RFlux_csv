@@ -58,7 +58,9 @@ def process_ghg_file(file_path: str, layout: str = AUTO) -> ReadResult:
     """Extract, parse and rename the ``.data`` member of a ``.ghg`` archive."""
     try:
         with zipfile.ZipFile(file_path, "r") as archive:
-            data_file_name = next(f for f in archive.namelist() if f.endswith(".data"))
+            data_file_name = next((f for f in archive.namelist() if f.endswith(".data")), None)
+            if data_file_name is None:
+                raise ValueError("archive contains no .data member")
             with archive.open(data_file_name) as data_file:
                 df = pd.read_csv(data_file, header=[0], skiprows=7, delimiter="\t")
                 # DateOffset takes integers only, hence milliseconds rather than seconds.
@@ -87,5 +89,9 @@ def process_ghg_file(file_path: str, layout: str = AUTO) -> ReadResult:
         )
 
     except Exception as e:  # one bad archive must not abort the run
-        print(f"Error processing file {file_path}: {e}")
-        return ReadResult(frame=None, timestamp=None, error=str(e))
+        # Some exceptions stringify to "" (an IndexError from a zip carrying no
+        # .data member, for one). An empty error would read as "no error" to any
+        # caller testing `if result.error:`, so always keep it non-empty.
+        message = str(e) or f"{type(e).__name__} (no message)"
+        print(f"Error processing file {file_path}: {message}")
+        return ReadResult(frame=None, timestamp=None, error=message)

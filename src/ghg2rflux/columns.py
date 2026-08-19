@@ -81,3 +81,15 @@ def select_layout(columns: list[str], layout: str = AUTO) -> tuple[str, list[str
     if "U (m/s)" in columns and "V (m/s)" in columns:
         return "licor_std", VARS_SUBSET1
     return "licor_aux", VARS_SUBSET2
+
+
+def validate_layout(layout: str) -> None:
+    """Raise if ``layout`` names no known preset.
+
+    Called once per run, before any file is opened: inside ``process_ghg_file``
+    this would be swallowed by the per-file exception handler and a single typo
+    would surface as every file in the folder "failing to parse".
+    """
+    if layout != AUTO and layout not in LAYOUTS:
+        known = ", ".join([AUTO, *sorted(LAYOUTS)])
+        raise KeyError(f"Unknown column layout {layout!r}. Known layouts: {known}")

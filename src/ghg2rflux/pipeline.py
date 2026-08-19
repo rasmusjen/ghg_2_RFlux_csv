@@ -20,6 +20,7 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
+from .columns import validate_layout
 from .discovery import ExcludedFolder, discover
 from .disturbance import build_disturbance_index, is_in_disturbance, load_disturbance_windows
 from .provenance import compute_file_hash, compute_tree_hash, get_git_metadata
@@ -133,6 +134,16 @@ def run_year(cfg: RunConfig, year: int, command: str = "") -> YearResult:
     disturbance_file = os.path.join(input_directory, "disturbance.txt")
     disturbance_windows = load_disturbance_windows(disturbance_file)
     windows_indexed, window_starts = build_disturbance_index(disturbance_windows)
+
+    # A misspelled `layout =` in a marker is a configuration error. Catch it once
+    # here rather than letting it become a per-file parse failure for the folder.
+    for layout in {f.settings.layout for f in ghg_files}:
+        try:
+            validate_layout(layout)
+        except KeyError as e:
+            result.error = str(e).strip("\"'")
+            print(f"ERROR [{cfg.site} {year}] {result.error}")
+            return result
 
     uses_markers = any(f.settings.marker_path for f in ghg_files) or bool(excluded_folders)
 
