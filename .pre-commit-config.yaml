@@ -1,0 +1,32 @@
+# Client-side guards. Every check here also runs in CI, so a bypassed hook
+# only defers the failure -- never use `git commit --no-verify`.
+exclude: '^(golden/|scratch/|\.mypy_cache/)'
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.2
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        files: ^src/ghg2rflux/
+        additional_dependencies: [pandas-stubs, types-tqdm]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        # .ghg inputs are ~1.5 MB and .csv outputs ~1.8 MB. Neither may ever
+        # enter git; 512 kB is comfortably below both.
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
