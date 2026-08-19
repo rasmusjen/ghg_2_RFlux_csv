@@ -31,8 +31,8 @@ file_ID = config['settings']['file_ID']
 hz = int(config['settings']['hz'])
 
 # Define the input and output directories
-input_directory = fr'E:\L0_raw\{station_ID}\{year}\ec\raw'
-output_directory = fr'E:\L0_raw\{station_ID}\{year}\ec\rflux_csv1'
+input_directory = fr'D:\L0_raw\{station_ID}\{year}\ec\raw'
+output_directory = fr'D:\L0_raw_sc26\{station_ID}\{year}\ec\rflux_csv'
 
 # Create output directory if it doesn't exist
 os.makedirs(output_directory, exist_ok=True)
