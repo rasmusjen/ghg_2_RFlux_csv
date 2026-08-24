@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_guard.js\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const p=(JSON.parse(s).tool_input||{}).file_path||'';if(!/\\.py$/i.test(p))return;const x=require('child_process');try{x.execFileSync('ruff',['format',p],{stdio:'ignore'});x.execFileSync('ruff',['check','--fix',p],{stdio:'ignore'});}catch(e){}}catch(e){}});\""
+          }
+        ]
+      }
+    ]
+  }
+}

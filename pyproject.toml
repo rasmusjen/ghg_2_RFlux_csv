@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghg2rflux"
+version = "0.1.0"
+description = "Convert raw LI-COR .ghg archives into RFlux-ready CSV files with an HTML QA manifest"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0,<4.0",
+    "tqdm>=4.65",
+]
+
+[project.scripts]
+ghg2rflux = "ghg2rflux.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# The HTML template lines are byte-significant: rewrapping them would change the
+# rendered manifest, which the golden regression test forbids.
+"src/ghg2rflux/report.py" = ["E501"]
+
+[tool.mypy]
+strict = true
+files = ["src/ghg2rflux"]
+
+[[tool.mypy.overrides]]
+module = ["pandas.*", "tqdm.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "golden: regression tests requiring real .ghg data on D: (deselect with -m 'not golden')",
+]

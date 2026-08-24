@@ -51,3 +51,17 @@ Thumbs.db
 .env.*
 *.local
 config.local.ini
+
+# Golden-baseline and scratch working dirs (real instrument data; never committed)
+golden/
+scratch/
+scratch_*/
+
+# Run artifacts that must never enter the repo (QA manifest + sidecar are written
+# into the OUTPUT DATA dir; if one of these appears here, a run was misconfigured)
+*.ghg
+*_ghg2rluxcsv_report_*.html
+*_ghg2rluxcsv_report_*.csv
+
+# Generated dependency pins are tracked; local resolver output is not
+pip-wheel-metadata/
